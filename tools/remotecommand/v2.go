@@ -24,6 +24,8 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
+
+	"github.com/moby/term"
 )
 
 // streamProtocolV2 implements version 2 of the streaming protocol for attach
@@ -100,7 +102,18 @@ func (p *streamProtocolV2) copyStdin() {
 			// the executed command will remain running.
 			defer once.Do(func() { p.remoteStdin.Close() })
 
-			if _, err := io.Copy(p.remoteStdin, readerWrapper{p.Stdin}); err != nil {
+			var err error
+			if p.Tty {
+				detachKeys, err := term.ToBytes("ctrl-p,ctrl-q")
+				if err != nil {
+					runtime.HandleError(err)
+				}
+				pr := term.NewEscapeProxy(readerWrapper{p.Stdin}, detachKeys)
+				_, err = io.Copy(p.remoteStdin, pr)
+			} else {
+				_, err = io.Copy(p.remoteStdin, readerWrapper{p.Stdin})
+			}
+			if err != nil {
 				runtime.HandleError(err)
 			}
 		}()
